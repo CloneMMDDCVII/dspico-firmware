@@ -6,6 +6,8 @@
 #include "usbEventQueue.h"
 #include "powerSaving.h"
 #include "ntrCardRomGameUsb.h"
+#include "cardOwner.h"
+#include "usbHost.h"
 
 static u8 sUsbDataBuffers[32][1024] alignas(4);
 static bool sUsbActive;
@@ -15,6 +17,23 @@ extern "C" void __scratch_y("cpu0") ntrc_gameReqUsbCommandCmd1(ntr_rom_emu_t* ro
     ntrc_noPayload(pio);
     ntrc_finishGameNoScrambleCmd1(romEmu);
     u32 subCommand = (romEmu->cmd0 >> 16) & 0xFF;
+
+    // There is one USB device controller, so the firmware's own mass storage device and
+    // DS software driving USB cannot both have it.
+    if (usbh_isActive())
+    {
+        if (card_isOwnedBy(CARD_OWNER_HOST))
+        {
+            // A host is using the card through us. Ignore the DS rather than pull the
+            // device out from under it mid-transfer.
+            return;
+        }
+
+        // Nothing has claimed the card yet, so hand USB to the DS. This keeps the
+        // existing DS side USB feature working exactly as it did before.
+        usbh_stop();
+    }
+
     switch (subCommand)
     {
         case USB_SUB_COMMAND_INIT:

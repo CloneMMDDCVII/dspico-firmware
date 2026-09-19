@@ -13,6 +13,11 @@ public:
     /// @return \c true if the SD card is ready, or \c false otherwise.
     bool IsReady() const { return _state == State::Idle; }
 
+    /// @brief Returns the number of 512 byte sectors on the card, or 0 if it is not
+    ///        initialized. Sized during TryInitialize(), so reading this costs no card access.
+    /// @return The number of sectors on the card.
+    u32 GetSectorCount() const { return _state == State::Uninitialized ? 0 : _lastSdSector + 1; }
+
     /// @brief Returns if the SD card is currently writing.
     /// @return \c true if the SD card is writing, or \c false otherwise.
     bool IsWriting() const { return _state == State::WriteBegin || _state == State::WriteBusy; }

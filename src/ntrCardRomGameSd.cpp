@@ -3,6 +3,7 @@
 #include "r4.h"
 #include "ntrCardRom.h"
 #include "ntrCardRomGameNoScramble.h"
+#include "cardOwner.h"
 
 static u8 sSdSectorBuf[1024];
 static u32 sCurSdSector = 0xFFFFFFFF;
@@ -20,6 +21,16 @@ extern "C" void __scratch_y("cpu0") ntrc_gameReqSdReadCmd1(ntr_rom_emu_t* romEmu
     ntrc_noPayload(pio);
     sCurSdSector = 0xFFFFFFFF;
     sReadSector = word;
+    if (!card_tryClaim(CARD_OWNER_DS))
+    {
+        // A USB host owns the card. Start nothing; NTR_CMD_ID_GAME_GET_SD_STAT will keep
+        // reporting not ready, which fails the read instead of corrupting the card.
+        sReadBusy = false;
+        sSdSectorBuffersSectors[0] = 0xFFFFFFFF;
+        sSdSectorBuffersSectors[1] = 0xFFFFFFFF;
+        ntrc_finishGameNoScrambleCmd1(romEmu);
+        return;
+    }
     if (sSdSectorBuffersSectors[sBufferIndex] != word)
     {
         sSdSectorBuffersSectors[0] = 0xFFFFFFFF;
@@ -37,6 +48,14 @@ extern "C" void __scratch_y("cpu0") ntrc_gameReqSdReadCmd1(ntr_rom_emu_t* romEmu
 extern "C" void __scratch_y("cpu0") ntrc_gameGetSdStatCmd0(ntr_rom_emu_t* romEmu, u32 word, pio_hw_t* pio)
 {
     ntrc_beginWrite(pio, 4);
+
+    if (!card_isOwnedBy(CARD_OWNER_DS))
+    {
+        // Not ready for as long as a USB host owns the card.
+        ntrc_writeWord(pio, 0);
+        ntrc_finishGameNoScrambleCmd0(romEmu);
+        return;
+    }
 
     bool sdReady;
     if (sWriteBusy)
@@ -91,7 +110,7 @@ extern "C" void __scratch_y("cpu0") ntrc_gameGetSdDataCmd0(ntr_rom_emu_t* romEmu
 
     sBufferIndex = 1 - sBufferIndex;
 
-    if (!sReadBusy)
+    if (!sReadBusy && card_isOwnedBy(CARD_OWNER_DS))
     {
         if (!gSdCard.TryBeginReadSectors(&sSdSectorBuf[sBufferIndex * 512], sReadSector, 1))
         {
@@ -127,6 +146,12 @@ extern "C" void __scratch_y("cpu0") ntrc_gameWriteSdDataCmd0(ntr_rom_emu_t* romE
 
 static void __scratch_y("cpu0") sdWritePayloadComplete(ntr_rom_emu_t* romEmu)
 {
+    if (!card_tryClaim(CARD_OWNER_DS))
+    {
+        // A USB host owns the card. Drop the write rather than interleave with the host.
+        return;
+    }
+
     bool isFirst = (romEmu->cmd0 & WRITE_SD_DATA_IS_FIRST_FLAG) != 0;
     bool isLast = (romEmu->cmd0 & WRITE_SD_DATA_IS_LAST_FLAG) != 0;
     if (isFirst)
@@ -177,7 +202,7 @@ extern "C" void __scratch_y("cpu0") ntrc_gameR4StartSdReadCmd0(ntr_rom_emu_t* ro
     ntrc_beginWrite(pio, 4);
     u32 sector = (romEmu->cmd0 << 8) >> 9;
     u32 result = 0x1F4;
-    if (gSdCard.IsReady())
+    if (gSdCard.IsReady() && card_tryClaim(CARD_OWNER_DS))
     {
         if (sector == sCurSdSector)
         {
@@ -219,6 +244,12 @@ extern "C" void __scratch_y("cpu0") ntrc_gameR4StartSdWriteCmd0(ntr_rom_emu_t* r
 
 static void __scratch_y("cpu0") r4SdWritePayloadComplete(ntr_rom_emu_t* romEmu)
 {
+    if (!card_tryClaim(CARD_OWNER_DS))
+    {
+        // A USB host owns the card. Drop the write.
+        return;
+    }
+
     if (__builtin_expect(!gSdCard.TryBeginWriteSectors(sSdSectorBuf, (romEmu->cmd0 << 8) >> 9, 1, false), false))
     {
         __breakpoint();
@@ -234,7 +265,7 @@ extern "C" void __scratch_y("cpu0") ntrc_gameR4GetSdWriteStatCmd0(ntr_rom_emu_t*
 {
     ntrc_beginWrite(pio, 4);
     u32 sdStat = 1;
-    if (gSdCard.IsReady())
+    if (gSdCard.IsReady() && card_isOwnedBy(CARD_OWNER_DS))
         sdStat = 0;
     ntrc_writeWord(pio, sdStat);
     ntrc_finishGameNoScrambleCmd0(romEmu);

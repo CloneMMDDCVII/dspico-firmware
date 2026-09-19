@@ -40,6 +40,10 @@ add_executable(DSpico
   src/ntrCardRomGameUsb.h
   src/usbEventQueue.c
   src/usbEventQueue.h
+  src/usbHost.cpp
+  src/usbHost.h
+  src/cardOwner.c
+  src/cardOwner.h
   src/tinyusb/dcd_rp2040.c
   src/tinyusb/rp2040_usb.c
   src/tinyusb/rp2040_usb.h

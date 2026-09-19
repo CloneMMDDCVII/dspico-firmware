@@ -19,6 +19,8 @@
 #include "pico/bootrom.h"
 #include "hardware/xosc.h"
 #include "powerSaving.h"
+#include "cardOwner.h"
+#include "usbHost.h"
 
 static u32 sProgramOffset;
 FATFS sFatFs;
@@ -360,13 +362,36 @@ int __time_critical_func(main)()
 
     pwr_initPowerSaving();
 
+    // The card mounted, so offer it to a USB host. This costs nothing if no host is
+    // attached: without a host there is no bus reset and nothing enumerates. Whichever
+    // side touches the card first keeps it, so this cannot take the card away from a DS
+    // (see cardOwner.h). Nothing here delays cartridge emulation, which matters because
+    // DSi ntrboot depends on the firmware being up early.
+    usbh_start();
+
     while (1)
     {
         gSdCard.Update();
         gSdCard.Update();
+        usbh_update();
     #ifdef ENABLE_R4_MODE
-        ntrc_gameR4Update();
+        // R4 emulation drives FatFs, whose cached state a USB host would invalidate.
+        if (!card_isOwnedBy(CARD_OWNER_HOST))
+        {
+            ntrc_gameR4Update();
+        }
     #endif
-        __wfi();
+        if (usbh_isActive())
+        {
+            // Wait on an event rather than an interrupt. The USB interrupt hands card
+            // transfers to usbh_update() and signals with __sev(); a plain __wfi() could
+            // sleep through work queued just after usbh_update() returned, and the host
+            // would wait forever because it is waiting on us.
+            __wfe();
+        }
+        else
+        {
+            __wfi();
+        }
     }
 }
