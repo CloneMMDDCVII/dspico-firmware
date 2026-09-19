@@ -186,14 +186,23 @@ static void __tusb_irq_path_func(hw_handle_buff_status)(void) {
       // Continue xfer
       bool done = hw_endpoint_xfer_continue(ep);
       if (done) {
+        // Finish with the endpoint before notifying, not after. A handler is allowed to
+        // start the next transfer on this same endpoint, and hw_endpoint_reset_transfer()
+        // would then wipe the bookkeeping for that new transfer: the hardware would send
+        // the data, but the endpoint would be left marked inactive and its completion
+        // never reported. Upstream tinyusb only queues an event here, so it never
+        // re-enters; the firmware's own mass storage device handles it in place.
+        const uint8_t ep_addr = ep->ep_addr;
+        const uint16_t xferred_len = ep->xferred_len;
+        hw_endpoint_reset_transfer(ep);
+
         // Notify
         if (usbh_isActive()) {
-          usbh_onXferComplete(ep->ep_addr, ep->xferred_len);
+          usbh_onXferComplete(ep_addr, xferred_len);
         } else {
-          usb_tryEnqueueEvent32Bit(USB_EVENT_XFER_COMPLETE | ep->ep_addr | (ep->xferred_len << 8));
+          usb_tryEnqueueEvent32Bit(USB_EVENT_XFER_COMPLETE | ep_addr | (xferred_len << 8));
         }
-        // dcd_event_xfer_complete(0, ep->ep_addr, ep->xferred_len, XFER_RESULT_SUCCESS, true);
-        hw_endpoint_reset_transfer(ep);
+        // dcd_event_xfer_complete(0, ep_addr, xferred_len, XFER_RESULT_SUCCESS, true);
       }
       remaining_buffers &= ~bit;
     }
