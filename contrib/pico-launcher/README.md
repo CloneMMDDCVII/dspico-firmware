@@ -11,15 +11,17 @@ BASE=https://raw.githubusercontent.com/CloneMMDDCVII/dspico-firmware/claude/proj
 
 mkdir -p ~/Downloads
 curl -fL -o ~/Downloads/custom-splash.patch  $BASE/custom-splash.patch
-curl -fL $BASE/folder-icons.zip.base64 | base64 -d > ~/Downloads/folder-icons.zip
+curl -fL $BASE/folder-art.zip.base64 | base64 -d > ~/Downloads/folder-art.zip
 
-sha256sum ~/Downloads/custom-splash.patch ~/Downloads/folder-icons.zip
+sha256sum ~/Downloads/custom-splash.patch ~/Downloads/folder-art.zip
 # 828840a97f90e915dec12db6ba96e1fc891b9e41d654273fa826f98c7c8082b2  custom-splash.patch
-# 2b0ee99dfdf97b3de0388af4d5a95683f837265c82546b4f18669bb5dea06bb1  folder-icons.zip
+# 03d6f13601047178b99e16ae4c82d536cf71051986327c43d3384bc30a22ddf1  folder-art.zip
 ```
 
-The icons are stored base64-encoded because this session can only write text files to
-GitHub; the `base64 -d` above turns it back into the same zip you already have.
+The art is stored base64-encoded because this session can only write text files to GitHub;
+the `base64 -d` above turns it back into an ordinary zip. `folder-art.zip` replaces the
+earlier `folder-icons.zip` and carries both the reworked icons and the new covers, so
+unzipping it over the card overwrites the old icons in place.
 
 If the hashes do not match, stop: the patch carries a binary PNG and a mangled copy will
 either fail `git apply` or, worse, apply and produce a corrupt image.
@@ -82,16 +84,35 @@ cp LAUNCHER.nds /run/media/$USER/<your card>/_picoboot.nds
 Keep your current `_picoboot.nds` somewhere first. Putting it back is the whole of the
 undo.
 
-The folder icons go on the card in the same pass, each `icon.bmp` into the folder it
-names:
+The folder art goes on the card in the same pass. Each folder gets an `icon.bmp` and a
+`cover.bmp`, already in the right place in the zip:
 
 ```bash
 cd /run/media/$USER/<your card>
-unzip -o ~/Downloads/folder-icons.zip
+unzip -o ~/Downloads/folder-art.zip
 ```
 
 Those need this same `develop` build to show up at all — see the note about tagged
 releases above.
+
+## The folder art
+
+Eight folders: EZ5Shell, Games, Games/Enfance, _gba, _nds, _pico, ROMDAT and SAVE. Each
+gets two files, which the launcher draws in two different places:
+
+- `icon.bmp` is the small picture in the browser on the bottom screen.
+- `cover.bmp` is the large preview on the top screen for whatever is selected, except in
+  the CoverFlow layout, where covers become the bottom-screen carousel itself.
+
+The six system folders carry a small gear in the bottom-right corner, in the same place
+and the same greys on both files. Games and Games/Enfance carry no gear: those are the two
+the user is meant to be in. `folder-art-preview.png` is the whole set, decoded back out of
+the finished BMPs through the transforms the hardware applies, so it is what the screen
+shows rather than what an image viewer shows.
+
+`art/` holds the generators and the checker. `validate_art.py` reimplements
+`BmpHeader::Validate` and each loader's own extra conditions, which matters because a BMP
+the launcher dislikes is dropped in silence with no error shown anywhere.
 
 ## What I verified, and what I didn't
 
